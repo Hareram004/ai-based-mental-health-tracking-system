@@ -1,0 +1,6 @@
+{
+  "name": "AI-Based Student Mental Health Monitoring System",
+  "description": "Final-Year B.Tech CSE Project: AI-Based Student Mental Health Monitoring System with PHP 8+, MySQL, XAMPP, Vanilla JS, Chart.js, and interactive live preview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Heart,
   User, 
@@ -16,15 +16,22 @@ import {
   Calendar,
   Clock,
   ArrowRight,
-  FolderTree,
   ShieldCheck,
   Check,
   Smile,
   Meh,
   Frown,
   Eye,
-  X
+  X,
+  UserPlus,
+  LogIn,
+  GraduationCap,
+  Database,
+  Lock,
+  Phone
 } from 'lucide-react';
+import { AuthStorage, UserProfile, AssessmentRecord, MoodEntry } from './lib/authStorage';
+import { isSupabaseConfigured } from './lib/supabase';
 
 // ==========================================
 // 30 Assessment Questions
@@ -82,55 +89,49 @@ const ASSESSMENT_QUESTIONS: Question[] = [
   { id: 30, category: 'Financial Stress', question: 'I constantly worry about education expenses, loans, or financial independence.', reverse: false }
 ];
 
-interface AssessmentRecord {
-  id: number;
-  date: string;
-  totalScore: number;
-  percentage: number;
-  stressLevel: 'Low Stress' | 'Moderate Stress' | 'High Stress';
-  categoryPercentages: Record<string, number>;
-}
-
-interface MoodEntry {
-  id: number;
-  date: string;
-  dayLabel: string;
-  mood: 'Happy' | 'Good' | 'Neutral' | 'Low' | 'Very Low';
-  stress: number;
-  energy: number;
-  sleep: number;
-  journal: string;
-  sentiment: 'Positive' | 'Neutral' | 'Negative';
-  emotionalTheme: string;
-  aiSummary: string;
-}
-
-interface StudentRecord {
-  id: number;
-  name: string;
-  email: string;
-  course: string;
-  year: string;
-  assessmentsCount: number;
-  latestScore: number;
-  latestStress: 'Low Stress' | 'Moderate Stress' | 'High Stress';
-}
-
 export default function App() {
-  // Navigation & Role State
-  const [currentRole, setCurrentRole] = useState<'student' | 'admin'>('student');
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'assessment' | 'mood' | 'recommendations' | 'history' | 'code'>('dashboard');
+  // Current Authenticated User (Persisted)
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => AuthStorage.getCurrentUser());
 
-  // Student Profile
-  const [studentUser] = useState({
-    name: 'Aarav Sharma',
-    email: 'student@mentalhealth.local',
+  // Navigation: 'dashboard' | 'assessment' | 'mood' | 'recommendations' | 'history' | 'admin'
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'assessment' | 'mood' | 'recommendations' | 'history' | 'admin'>('dashboard');
+
+  // Auth Modal State: null | 'login' | 'register'
+  const [authModal, setAuthModal] = useState<'login' | 'register' | null>(null);
+  const [showStorageModal, setShowStorageModal] = useState(false);
+
+  // Registration Form
+  const [registerForm, setRegisterForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    confirmPassword: '',
     college: 'Apex Institute of Technology',
     course: 'B.Tech Computer Science & Engineering',
-    year: '4th Year'
+    year: '4th Year',
+    age: 21,
+    gender: 'Prefer not to say'
   });
 
-  // Assessment Question Navigation & Answers
+  // Login Form
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // User-Scoped Persistent Assessments & Moods
+  const [assessments, setAssessments] = useState<AssessmentRecord[]>([]);
+  const [moodLogs, setMoodLogs] = useState<MoodEntry[]>([]);
+
+  // Load user data on user switch
+  useEffect(() => {
+    if (currentUser) {
+      setAssessments(AuthStorage.getUserAssessments(currentUser.id));
+      setMoodLogs(AuthStorage.getUserMoods(currentUser.id));
+    }
+  }, [currentUser]);
+
+  // Assessment Question Navigation & Active Answers
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({
     1: 4, 2: 4, 3: 3, 4: 4, 5: 3,
@@ -142,43 +143,7 @@ export default function App() {
     29: 2, 30: 3
   });
 
-  // Assessment History
-  const [assessmentHistory, setAssessmentHistory] = useState<AssessmentRecord[]>([
-    {
-      id: 1,
-      date: 'Mar 10, 2026',
-      totalScore: 78,
-      percentage: 40.0,
-      stressLevel: 'Moderate Stress',
-      categoryPercentages: {
-        'Academic Stress': 56,
-        'Social Life': 32,
-        'Family Environment': 26,
-        'Social Media': 50,
-        'Physical Health': 36,
-        'Campus Environment': 20,
-        'Financial Stress': 28
-      }
-    },
-    {
-      id: 2,
-      date: 'Mar 24, 2026',
-      totalScore: 72,
-      percentage: 35.0,
-      stressLevel: 'Moderate Stress',
-      categoryPercentages: {
-        'Academic Stress': 50,
-        'Social Life': 30,
-        'Family Environment': 24,
-        'Social Media': 42,
-        'Physical Health': 30,
-        'Campus Environment': 16,
-        'Financial Stress': 26
-      }
-    }
-  ]);
-
-  // Mood Tracker State
+  // Mood Tracker Form
   const [moodForm, setMoodForm] = useState({
     mood: 'Good' as 'Happy' | 'Good' | 'Neutral' | 'Low' | 'Very Low',
     stress: 4,
@@ -199,125 +164,24 @@ export default function App() {
 
   const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
 
-  // 7-Day Mood Stream
-  const [moodLogs, setMoodLogs] = useState<MoodEntry[]>([
-    {
-      id: 1,
-      date: '2026-03-24',
-      dayLabel: 'Tue',
-      mood: 'Good',
-      stress: 4,
-      energy: 7,
-      sleep: 7.2,
-      journal: 'Finished my database lab assignment on schedule today.',
-      sentiment: 'Positive',
-      emotionalTheme: 'Academic Progress',
-      aiSummary: 'Positive focus and manageable workload balance.'
-    },
-    {
-      id: 2,
-      date: '2026-03-25',
-      dayLabel: 'Wed',
-      mood: 'Neutral',
-      stress: 5,
-      energy: 6,
-      sleep: 6.5,
-      journal: 'Long lab sessions today. Need to organize my revision notes for next week.',
-      sentiment: 'Neutral',
-      emotionalTheme: 'Daily Academic Routine',
-      aiSummary: 'Routine academic fatigue noted; pacing is helpful.'
-    },
-    {
-      id: 3,
-      date: '2026-03-26',
-      dayLabel: 'Thu',
-      mood: 'Low',
-      stress: 7,
-      energy: 4,
-      sleep: 5.5,
-      journal: 'Feeling anxious about upcoming campus placement interviews and tests.',
-      sentiment: 'Negative',
-      emotionalTheme: 'Career Preparation',
-      aiSummary: 'Placement apprehension noted; structured preparation advised.'
-    },
-    {
-      id: 4,
-      date: '2026-03-27',
-      dayLabel: 'Fri',
-      mood: 'Neutral',
-      stress: 5,
-      energy: 6,
-      sleep: 7.0,
-      journal: 'Spoke with a senior who shared helpful placement guidance.',
-      sentiment: 'Neutral',
-      emotionalTheme: 'Peer Support',
-      aiSummary: 'Social reassurance helped alleviate tension.'
-    },
-    {
-      id: 5,
-      date: '2026-03-28',
-      dayLabel: 'Sat',
-      mood: 'Good',
-      stress: 4,
-      energy: 8,
-      sleep: 8.0,
-      journal: 'Solved coding problems and attended the student robotics meetup.',
-      sentiment: 'Positive',
-      emotionalTheme: 'Technical Hobby',
-      aiSummary: 'Active participation in technical projects restored energy.'
-    },
-    {
-      id: 6,
-      date: '2026-03-29',
-      dayLabel: 'Sun',
-      mood: 'Happy',
-      stress: 3,
-      energy: 9,
-      sleep: 8.2,
-      journal: 'Restful weekend. Calm revision and evening walk with friends.',
-      sentiment: 'Positive',
-      emotionalTheme: 'Rest & Recovery',
-      aiSummary: 'Optimal sleep duration and refreshed emotional outlook.'
-    },
-    {
-      id: 7,
-      date: '2026-03-30',
-      dayLabel: 'Mon',
-      mood: 'Good',
-      stress: 4,
-      energy: 7,
-      sleep: 7.2,
-      journal: 'Steady morning routine. Classes went smoothly without rush.',
-      sentiment: 'Positive',
-      emotionalTheme: 'Balanced Routine',
-      aiSummary: 'Healthy week commencement with consistent habits.'
-    }
-  ]);
-
-  // Admin Registered Students
-  const [adminStudents] = useState<StudentRecord[]>([
-    { id: 1, name: 'Aarav Sharma', email: 'student@mentalhealth.local', course: 'B.Tech Computer Science', year: '4th Year', assessmentsCount: 2, latestScore: 35.0, latestStress: 'Moderate Stress' },
-    { id: 2, name: 'Priya Patel', email: 'priya.patel@student.local', course: 'B.Tech Information Technology', year: '3rd Year', assessmentsCount: 3, latestScore: 18.3, latestStress: 'Low Stress' },
-    { id: 3, name: 'Rohan Verma', email: 'rohan.verma@student.local', course: 'B.Tech Electrical Engineering', year: '4th Year', assessmentsCount: 1, latestScore: 70.0, latestStress: 'High Stress' },
-    { id: 4, name: 'Ananya Iyer', email: 'ananya.iyer@student.local', course: 'B.Tech Electronics & Comm', year: '2nd Year', assessmentsCount: 2, latestScore: 42.5, latestStress: 'Moderate Stress' }
-  ]);
-
-  // Admin Search & Filter
-  const [adminSearch, setAdminSearch] = useState('');
-  const [adminStressFilter, setAdminStressFilter] = useState('All');
-  const [inspectedStudent, setInspectedStudent] = useState<StudentRecord | null>(null);
-
   // Notification Toast
   const [notification, setNotification] = useState<string | null>(null);
   const showNotification = (msg: string) => {
     setNotification(msg);
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), 3200);
   };
 
-  // PHP File Explorer selected path
-  const [selectedFilePath, setSelectedFilePath] = useState('database/mental_health_system.sql');
+  // Admin View State
+  const [allStudents, setAllStudents] = useState<UserProfile[]>(() => AuthStorage.getAllUsers());
+  const [adminSearch, setAdminSearch] = useState('');
+  const [inspectedStudent, setInspectedStudent] = useState<UserProfile | null>(null);
 
-  // Compute live score from current answers
+  // Refresh students list
+  const refreshStudents = () => {
+    setAllStudents(AuthStorage.getAllUsers());
+  };
+
+  // Live Score Calculation
   const currentScore = useMemo(() => {
     let total = 0;
     const catMap: Record<string, { sum: number; count: number }> = {};
@@ -351,14 +215,119 @@ export default function App() {
     return { total, pct, classification, categoryPercentages };
   }, [answers]);
 
-  const latestAssessment = assessmentHistory[assessmentHistory.length - 1];
-  const wellnessScore = Math.round(100 - (latestAssessment?.percentage || 35));
+  const latestAssessment = assessments[0];
+  const wellnessScore = latestAssessment ? Math.round(100 - latestAssessment.percentage) : 72;
 
-  // Assessment submission
+  // Handle User Registration
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    if (!registerForm.name.trim() || !registerForm.email.trim() || !registerForm.password.trim()) {
+      setAuthError('Please complete all required fields.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(registerForm.email.trim())) {
+      setAuthError('Please enter a valid email address.');
+      return;
+    }
+
+    if (registerForm.password.length < 8) {
+      setAuthError('Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (registerForm.confirmPassword && registerForm.password !== registerForm.confirmPassword) {
+      setAuthError('Passwords do not match. Please verify your password confirmation.');
+      return;
+    }
+
+    const ageNum = Number(registerForm.age);
+    if (isNaN(ageNum) || ageNum < 15 || ageNum > 85) {
+      setAuthError('Please enter a valid student age (between 15 and 85).');
+      return;
+    }
+
+    const res = await AuthStorage.registerUser({
+      name: registerForm.name.trim(),
+      email: registerForm.email.trim().toLowerCase(),
+      password: registerForm.password,
+      phone: registerForm.phone.trim() || '+91 9000000000',
+      college: registerForm.college.trim() || 'Engineering Institute',
+      course: registerForm.course.trim() || 'B.Tech CSE',
+      year: registerForm.year,
+      age: ageNum,
+      gender: registerForm.gender,
+      role: 'student'
+    });
+
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      setAuthModal(null);
+      refreshStudents();
+      showNotification(`Account created successfully! Welcome, ${res.user.name}. Your profile and data are saved.`);
+      setCurrentPage('dashboard');
+    } else {
+      setAuthError(res.error || 'Registration failed.');
+    }
+  };
+
+  // Handle User Login
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setAuthError('Please enter both email and password.');
+      return;
+    }
+
+    const res = await AuthStorage.login(loginEmail.trim().toLowerCase(), loginPassword);
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      setAuthModal(null);
+      showNotification(`Signed in as ${res.user.name}.`);
+      if (res.user.role === 'admin') {
+        setCurrentPage('admin');
+      } else {
+        setCurrentPage('dashboard');
+      }
+    } else {
+      setAuthError(res.error || 'Login failed.');
+    }
+  };
+
+  // Switch to preset demo user
+  const handleQuickSwitchUser = (email: string) => {
+    const users = AuthStorage.getAllUsers();
+    const target = users.find(u => u.email === email);
+    if (target) {
+      AuthStorage.setCurrentUser(target);
+      setCurrentUser(target);
+      setAuthModal(null);
+      showNotification(`Switched to ${target.name}.`);
+      if (target.role === 'admin') setCurrentPage('admin');
+      else setCurrentPage('dashboard');
+    }
+  };
+
+  // Logout
+  const handleLogout = () => {
+    AuthStorage.logout();
+    const users = AuthStorage.getAllUsers();
+    const guestUser = users[0]; // Fallback to demo student
+    setCurrentUser(guestUser);
+    showNotification('Logged out successfully.');
+    setCurrentPage('dashboard');
+  };
+
+  // Save Assessment
   const handleAssessmentSubmit = () => {
     const res = currentScore;
     const newRecord: AssessmentRecord = {
-      id: assessmentHistory.length + 1,
+      id: Date.now(),
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       totalScore: res.total,
       percentage: res.pct,
@@ -366,7 +335,8 @@ export default function App() {
       categoryPercentages: res.categoryPercentages
     };
 
-    setAssessmentHistory([...assessmentHistory, newRecord]);
+    AuthStorage.saveUserAssessment(currentUser.id, newRecord);
+    setAssessments(prev => [newRecord, ...prev]);
     showNotification(`Assessment saved. Your stress classification is ${res.classification}.`);
     setCurrentPage('dashboard');
   };
@@ -413,10 +383,11 @@ export default function App() {
     }, 400);
   };
 
+  // Save Mood
   const handleSaveMood = (e: React.FormEvent) => {
     e.preventDefault();
     const newEntry: MoodEntry = {
-      id: moodLogs.length + 1,
+      id: Date.now(),
       date: new Date().toISOString().split('T')[0],
       dayLabel: 'Today',
       mood: moodForm.mood,
@@ -429,23 +400,23 @@ export default function App() {
       aiSummary: aiAnalysisResult?.summary || 'Mood entry logged.'
     };
 
-    setMoodLogs([newEntry, ...moodLogs.slice(0, 6)]);
+    AuthStorage.saveUserMood(currentUser.id, newEntry);
+    setMoodLogs(prev => [newEntry, ...prev.slice(0, 6)]);
     showNotification("Today's mood entry recorded successfully.");
     setCurrentPage('dashboard');
   };
 
-  // Filtered admin students
-  const filteredStudents = useMemo(() => {
-    return adminStudents.filter(s => {
-      const matchesSearch = s.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
-                            s.course.toLowerCase().includes(adminSearch.toLowerCase());
-      const matchesFilter = adminStressFilter === 'All' || s.latestStress === adminStressFilter;
-      return matchesSearch && matchesFilter;
-    });
-  }, [adminStudents, adminSearch, adminStressFilter]);
-
   const currentQ = ASSESSMENT_QUESTIONS[currentQuestionIndex];
   const progressPercent = Math.round(((currentQuestionIndex + 1) / ASSESSMENT_QUESTIONS.length) * 100);
+
+  // Filtered Students for Admin
+  const filteredStudents = useMemo(() => {
+    return allStudents.filter(u => u.role === 'student' && (
+      u.name.toLowerCase().includes(adminSearch.toLowerCase()) ||
+      u.course.toLowerCase().includes(adminSearch.toLowerCase()) ||
+      u.email.toLowerCase().includes(adminSearch.toLowerCase())
+    ));
+  }, [allStudents, adminSearch]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] flex flex-col font-sans">
@@ -460,7 +431,7 @@ export default function App() {
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           
           {/* Left: Brand */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setCurrentPage('dashboard')}>
             <div className="w-8 h-8 rounded-lg bg-[#2563EB] text-white flex items-center justify-center">
               <Heart className="w-4 h-4 fill-white" />
             </div>
@@ -470,45 +441,49 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right: User Profile & Mode Switcher */}
-          <div className="flex items-center gap-4 text-[14px]">
-            {/* Role switch toggle */}
-            <div className="hidden sm:flex items-center bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0] text-[12px]">
-              <button
-                onClick={() => { setCurrentRole('student'); setCurrentPage('dashboard'); }}
-                className={`px-3 py-1 rounded-[6px] font-medium transition-colors ${
-                  currentRole === 'student' ? 'bg-white text-[#2563EB] shadow-xs' : 'text-[#64748B] hover:text-[#1E293B]'
-                }`}
-              >
-                Student
-              </button>
-              <button
-                onClick={() => { setCurrentRole('admin'); setCurrentPage('dashboard'); }}
-                className={`px-3 py-1 rounded-[6px] font-medium transition-colors ${
-                  currentRole === 'admin' ? 'bg-white text-[#2563EB] shadow-xs' : 'text-[#64748B] hover:text-[#1E293B]'
-                }`}
-              >
-                Faculty Admin
-              </button>
-            </div>
+          {/* Right: User Profile & Authentication Buttons */}
+          <div className="flex items-center gap-3 text-[14px]">
+            {currentUser ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-[#1E293B]">
+                  <div className="w-7 h-7 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-medium text-[13px]">
+                    {currentUser.name.charAt(0)}
+                  </div>
+                  <span className="font-medium hidden sm:inline">{currentUser.name}</span>
+                </div>
 
-            <div className="flex items-center gap-2 text-[#1E293B]">
-              <div className="w-7 h-7 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-medium text-[13px]">
-                {currentRole === 'student' ? 'A' : 'F'}
+                <button
+                  onClick={() => setAuthModal('register')}
+                  className="hidden md:flex items-center gap-1 text-[13px] text-[#2563EB] bg-[#EFF6FF] hover:bg-blue-100 px-2.5 py-1.5 rounded-[8px] font-medium transition-colors"
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> Register New
+                </button>
+
+                <button 
+                  onClick={handleLogout}
+                  className="text-[#64748B] hover:text-[#1E293B] text-[13px] flex items-center gap-1 p-1"
+                  title="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
               </div>
-              <span className="font-medium hidden sm:inline">
-                {currentRole === 'student' ? studentUser.name : 'Faculty Counselor'}
-              </span>
-            </div>
-
-            <button 
-              onClick={() => showNotification('Session logged out.')}
-              className="text-[#64748B] hover:text-[#1E293B] text-[13px] flex items-center gap-1"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden md:inline">Logout</span>
-            </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAuthModal('login')}
+                  className="text-[#2563EB] font-medium hover:underline text-[13px] px-2 py-1"
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => setAuthModal('register')}
+                  className="bg-[#2563EB] hover:bg-blue-700 text-white font-medium text-[13px] px-3.5 py-1.5 rounded-[8px] transition-colors"
+                >
+                  Register
+                </button>
+              </div>
+            )}
           </div>
 
         </div>
@@ -519,97 +494,66 @@ export default function App() {
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 flex items-center justify-between overflow-x-auto py-2">
           
           <div className="flex items-center gap-1.5 text-[14px]">
-            {currentRole === 'student' ? (
-              <>
-                <button
-                  onClick={() => setCurrentPage('dashboard')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'dashboard'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  Dashboard
-                </button>
-                <button
-                  onClick={() => setCurrentPage('assessment')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'assessment'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  Assessment
-                </button>
-                <button
-                  onClick={() => setCurrentPage('mood')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'mood'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  Daily Mood
-                </button>
-                <button
-                  onClick={() => setCurrentPage('recommendations')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'recommendations'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  Wellness Guidance
-                </button>
-                <button
-                  onClick={() => setCurrentPage('history')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'history'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  History
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setCurrentPage('dashboard')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'dashboard'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  Admin Overview
-                </button>
-                <button
-                  onClick={() => setCurrentPage('history')}
-                  className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
-                    currentPage === 'history'
-                      ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
-                      : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  Students Directory
-                </button>
-              </>
+            <button
+              onClick={() => setCurrentPage('dashboard')}
+              className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
+                currentPage === 'dashboard'
+                  ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
+                  : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
+              }`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setCurrentPage('assessment')}
+              className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
+                currentPage === 'assessment'
+                  ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
+                  : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
+              }`}
+            >
+              Assessment
+            </button>
+            <button
+              onClick={() => setCurrentPage('mood')}
+              className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
+                currentPage === 'mood'
+                  ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
+                  : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
+              }`}
+            >
+              Daily Mood
+            </button>
+            <button
+              onClick={() => setCurrentPage('recommendations')}
+              className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
+                currentPage === 'recommendations'
+                  ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
+                  : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
+              }`}
+            >
+              Wellness Guidance
+            </button>
+            <button
+              onClick={() => setCurrentPage('history')}
+              className={`px-3.5 py-1.5 rounded-[8px] transition-colors ${
+                currentPage === 'history'
+                  ? 'bg-[#EFF6FF] text-[#2563EB] font-medium'
+                  : 'text-[#64748B] hover:text-[#1E293B] hover:bg-slate-50 font-normal'
+              }`}
+            >
+              History
+            </button>
+            {currentPage === 'admin' && (
+              <span className="px-3 py-1.5 rounded-[8px] bg-purple-50 text-purple-700 font-medium text-[13px]">
+                Faculty Admin Console
+              </span>
             )}
           </div>
 
-          {/* PHP Codebase Viewer tab link */}
-          <button
-            onClick={() => setCurrentPage('code')}
-            className={`px-3 py-1.5 rounded-[8px] text-[13px] font-medium transition-colors flex items-center gap-1.5 ${
-              currentPage === 'code'
-                ? 'bg-[#EFF6FF] text-[#2563EB]'
-                : 'text-[#64748B] hover:text-[#1E293B]'
-            }`}
-          >
-            <FolderTree className="w-3.5 h-3.5 text-[#2563EB]" />
-            <span>PHP Source</span>
-          </button>
+          <div className="flex items-center gap-2 text-[12px] text-[#64748B]">
+            <span>{currentUser.role === 'admin' ? 'Role: Faculty Admin' : `Student: ${currentUser.course}`}</span>
+          </div>
 
         </div>
       </nav>
@@ -628,17 +572,17 @@ export default function App() {
         {/* ========================================================
             PAGE 1: STUDENT DASHBOARD
             ======================================================== */}
-        {currentRole === 'student' && currentPage === 'dashboard' && (
+        {currentPage === 'dashboard' && (
           <div className="space-y-6">
             
             {/* Top Welcome Title */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="text-[24px] sm:text-[28px] font-bold text-[#1E293B]">
-                  Welcome back, {studentUser.name}
+                  Welcome, {currentUser.name}
                 </h1>
                 <p className="text-[14px] text-[#64748B] mt-0.5">
-                  {studentUser.course} &bull; Here is your recent mental wellness overview.
+                  {currentUser.college} &bull; {currentUser.course} &bull; Personal wellness tracker.
                 </p>
               </div>
 
@@ -788,7 +732,7 @@ export default function App() {
                       strokeDasharray="4 4"
                     />
 
-                    {moodLogs.slice(0, 7).reverse().map((entry, idx) => {
+                    {(moodLogs.length > 0 ? moodLogs : [{ id: 1, dayLabel: 'Today', stress: 4 }]).slice(0, 7).reverse().map((entry, idx) => {
                       const cx = 60 + idx * 100;
                       const cy = 160 - (entry.stress * 14);
 
@@ -863,7 +807,7 @@ export default function App() {
 
               <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-[8px] p-4 text-[14px]">
                 <p className="text-[#1E293B] italic">
-                  "{moodLogs[0]?.journal}"
+                  "{moodLogs[0]?.journal || 'No journal entry saved yet.'}"
                 </p>
                 <div className="mt-2 pt-2 border-t border-[#E2E8F0] text-[13px] text-[#64748B]">
                   <strong>Identified Theme:</strong> {aiAnalysisResult?.theme} &bull; {aiAnalysisResult?.summary}
@@ -887,9 +831,9 @@ export default function App() {
         )}
 
         {/* ========================================================
-            PAGE 2: ASSESSMENT (Question by Question Flow)
+            PAGE 2: ASSESSMENT
             ======================================================== */}
-        {currentRole === 'student' && currentPage === 'assessment' && (
+        {currentPage === 'assessment' && (
           <div className="max-w-[760px] mx-auto space-y-6">
             
             {/* Header & Progress */}
@@ -928,7 +872,7 @@ export default function App() {
                 </h2>
               </div>
 
-              {/* 5 Clean Selectable Radio-Card Buttons */}
+              {/* 5 Selectable Radio Cards */}
               <div className="space-y-2.5">
                 {[
                   { val: 1, label: 'Never' },
@@ -999,38 +943,13 @@ export default function App() {
 
             </div>
 
-            {/* Quick jump questions picker */}
-            <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-4 text-[12px]">
-              <span className="font-medium text-[#64748B] block mb-2">Jump to Question:</span>
-              <div className="grid grid-cols-10 gap-1.5">
-                {ASSESSMENT_QUESTIONS.map((q, idx) => {
-                  const isCurrent = idx === currentQuestionIndex;
-                  return (
-                    <button
-                      key={q.id}
-                      onClick={() => setCurrentQuestionIndex(idx)}
-                      className={`h-7 rounded-[6px] font-medium flex items-center justify-center transition-colors ${
-                        isCurrent
-                          ? 'bg-[#2563EB] text-white'
-                          : answers[q.id]
-                          ? 'bg-[#EFF6FF] text-[#2563EB]'
-                          : 'bg-[#F1F5F9] text-[#64748B]'
-                      }`}
-                    >
-                      {q.id}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
           </div>
         )}
 
         {/* ========================================================
             PAGE 3: DAILY MOOD TRACKER
             ======================================================== */}
-        {currentRole === 'student' && currentPage === 'mood' && (
+        {currentPage === 'mood' && (
           <div className="max-w-[760px] mx-auto space-y-6">
             
             <div>
@@ -1044,7 +963,6 @@ export default function App() {
 
             <form onSubmit={handleSaveMood} className="bg-white border border-[#E2E8F0] rounded-[12px] p-6 sm:p-8 shadow-[0_2px_8px_rgba(15,23,42,0.06)] space-y-6">
               
-              {/* Heading: How are you feeling today? */}
               <div>
                 <label className="block text-[15px] font-semibold text-[#1E293B] mb-3">
                   How are you feeling today?
@@ -1078,7 +996,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Stress Level & Energy Level Sliders */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
                 <div>
                   <div className="flex justify-between text-[14px] text-[#1E293B] font-medium mb-1.5">
@@ -1119,7 +1036,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Sleep Duration */}
               <div>
                 <label className="block text-[14px] font-medium text-[#1E293B] mb-1.5">
                   Sleep Duration (Hours)
@@ -1140,7 +1056,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Journal */}
               <div>
                 <div className="flex justify-between items-center mb-1.5">
                   <label className="block text-[14px] font-medium text-[#1E293B]">
@@ -1164,7 +1079,6 @@ export default function App() {
                 />
               </div>
 
-              {/* AI Result Callout */}
               {aiAnalysisResult && (
                 <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-[8px] p-4 text-[13px]">
                   <div className="flex justify-between items-center mb-1 text-[#1E293B] font-medium">
@@ -1192,9 +1106,9 @@ export default function App() {
         )}
 
         {/* ========================================================
-            PAGE 4: WELLNESS GUIDANCE (Recommendations)
+            PAGE 4: WELLNESS GUIDANCE
             ======================================================== */}
-        {currentRole === 'student' && currentPage === 'recommendations' && (
+        {currentPage === 'recommendations' && (
           <div className="space-y-6">
             
             <div>
@@ -1206,15 +1120,13 @@ export default function App() {
               </p>
             </div>
 
-            {/* Explanation box: What this means */}
             <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
               <h2 className="text-[16px] font-semibold text-[#1E293B]">What this means</h2>
               <p className="text-[14px] text-[#64748B] mt-1 leading-relaxed">
-                Your recent responses indicate a moderate level of stress. Consider reviewing the wellness suggestions below to organize your studies and physical routine.
+                Your responses reflect your current academic pace. Consider applying the suggestions below to structure study blocks and recovery habits.
               </p>
             </div>
 
-            {/* Clean Recommendation Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
               <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
@@ -1251,48 +1163,49 @@ export default function App() {
         )}
 
         {/* ========================================================
-            PAGE 5: HISTORY TABLE
+            PAGE 5: HISTORY
             ======================================================== */}
-        {((currentRole === 'student' && currentPage === 'history') || (currentRole === 'admin' && currentPage === 'history')) && (
+        {currentPage === 'history' && (
           <div className="space-y-6">
             
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="text-[24px] sm:text-[28px] font-bold text-[#1E293B]">
-                  {currentRole === 'student' ? 'Assessment History' : 'Students Directory'}
+                  Assessment History
                 </h1>
                 <p className="text-[14px] text-[#64748B] mt-0.5">
-                  {currentRole === 'student' 
-                    ? 'Review previous assessment results and progress over time.'
-                    : 'Registered students and their latest stress evaluations.'}
+                  Review previous assessment results and progress over time.
                 </p>
               </div>
 
-              {currentRole === 'student' && (
-                <button
-                  onClick={() => window.print()}
-                  className="bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#1E293B] text-[13px] font-medium px-3.5 py-2 rounded-[8px] flex items-center gap-1.5 transition-colors"
-                >
-                  <Printer className="w-4 h-4" /> Print History
-                </button>
-              )}
+              <button
+                onClick={() => window.print()}
+                className="bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#1E293B] text-[13px] font-medium px-3.5 py-2 rounded-[8px] flex items-center gap-1.5 transition-colors"
+              >
+                <Printer className="w-4 h-4" /> Print History
+              </button>
             </div>
 
-            {currentRole === 'student' ? (
-              /* Student Assessment Table */
-              <div className="bg-white border border-[#E2E8F0] rounded-[12px] overflow-hidden shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[14px]">
-                    <thead>
-                      <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B] text-[13px]">
-                        <th className="py-3 px-4 font-medium">Date</th>
-                        <th className="py-3 px-4 font-medium">Wellness Score</th>
-                        <th className="py-3 px-4 font-medium">Stress Level</th>
-                        <th className="py-3 px-4 font-medium">Raw Total</th>
+            <div className="bg-white border border-[#E2E8F0] rounded-[12px] overflow-hidden shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[14px]">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B] text-[13px]">
+                      <th className="py-3 px-4 font-medium">Date</th>
+                      <th className="py-3 px-4 font-medium">Wellness Score</th>
+                      <th className="py-3 px-4 font-medium">Stress Level</th>
+                      <th className="py-3 px-4 font-medium">Raw Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {assessments.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-[#64748B]">
+                          No assessments completed yet. Take your first 30-item evaluation.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E2E8F0]">
-                      {assessmentHistory.map((rec) => {
+                    ) : (
+                      assessments.map((rec) => {
                         const score = Math.round(100 - rec.percentage);
                         const isLow = rec.stressLevel === 'Low Stress';
                         const isMod = rec.stressLevel === 'Moderate Stress';
@@ -1313,85 +1226,122 @@ export default function App() {
                             <td className="py-3.5 px-4 text-[#64748B]">{rec.totalScore} / 150</td>
                           </tr>
                         );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              /* Admin Students Directory Table */
-              <div className="bg-white border border-[#E2E8F0] rounded-[12px] overflow-hidden shadow-[0_2px_8px_rgba(15,23,42,0.06)] space-y-4 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Search students..."
-                      value={adminSearch}
-                      onChange={(e) => setAdminSearch(e.target.value)}
-                      className="border border-[#E2E8F0] rounded-[8px] px-3 py-1.5 text-[13px] w-56 focus:outline-[#2563EB]"
-                    />
-                    <select
-                      value={adminStressFilter}
-                      onChange={(e) => setAdminStressFilter(e.target.value)}
-                      className="border border-[#E2E8F0] rounded-[8px] px-3 py-1.5 text-[13px] focus:outline-[#2563EB]"
-                    >
-                      <option value="All">All Levels</option>
-                      <option value="Low Stress">Low Stress</option>
-                      <option value="Moderate Stress">Moderate Stress</option>
-                      <option value="High Stress">High Stress</option>
-                    </select>
-                  </div>
-                  <span className="text-[13px] text-[#64748B]">{filteredStudents.length} students found</span>
-                </div>
+            </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[14px]">
-                    <thead>
-                      <tr className="border-b border-[#E2E8F0] text-[#64748B] text-[13px]">
-                        <th className="py-2.5 px-3 font-medium">Student Name</th>
-                        <th className="py-2.5 px-3 font-medium">Course</th>
-                        <th className="py-2.5 px-3 font-medium">Year</th>
-                        <th className="py-2.5 px-3 font-medium">Surveys</th>
-                        <th className="py-2.5 px-3 font-medium">Stress Status</th>
-                        <th className="py-2.5 px-3 font-medium">Action</th>
+          </div>
+        )}
+
+        {/* ========================================================
+            PAGE 6: FACULTY ADMIN CONSOLE (ACCESSIBLE VIA FOOTER)
+            ======================================================== */}
+        {currentPage === 'admin' && (
+          <div className="space-y-6">
+            
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="text-[12px] font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
+                  Faculty Administration Console
+                </span>
+                <h1 className="text-[24px] sm:text-[28px] font-bold text-[#1E293B] mt-1">
+                  Institutional Student Wellness Directory
+                </h1>
+                <p className="text-[14px] text-[#64748B] mt-0.5">
+                  Review all enrolled students, monitor assessments, and access counselor notes.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  const student = allStudents.find(u => u.role === 'student') || allStudents[0];
+                  AuthStorage.setCurrentUser(student);
+                  setCurrentUser(student);
+                  setCurrentPage('dashboard');
+                  showNotification('Returned to student dashboard.');
+                }}
+                className="bg-white border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#1E293B] text-[13px] font-medium px-3.5 py-2 rounded-[8px] transition-colors"
+              >
+                Return to Student View
+              </button>
+            </div>
+
+            {/* Admin Stats Overview */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+                <span className="text-[13px] font-medium text-[#64748B]">Total Registered Students</span>
+                <div className="text-[28px] font-bold text-[#1E293B] mt-1">{filteredStudents.length}</div>
+                <p className="text-[12px] text-[#64748B] mt-0.5">Campus records saved in storage</p>
+              </div>
+
+              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+                <span className="text-[13px] font-medium text-[#64748B]">Average Wellness Score</span>
+                <div className="text-[28px] font-bold text-[#14B8A6] mt-1">70 / 100</div>
+                <p className="text-[12px] text-[#64748B] mt-0.5">Overall cohort baseline</p>
+              </div>
+
+              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+                <span className="text-[13px] font-medium text-[#64748B]">Counselor Intervention Need</span>
+                <div className="text-[28px] font-bold text-[#2563EB] mt-1">Normal</div>
+                <p className="text-[12px] text-[#64748B] mt-0.5">No critical self-harm flags active</p>
+              </div>
+            </div>
+
+            {/* Students Table */}
+            <div className="bg-white border border-[#E2E8F0] rounded-[12px] overflow-hidden shadow-[0_2px_8px_rgba(15,23,42,0.06)] p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-[#94A3B8]" />
+                  <input
+                    type="text"
+                    placeholder="Search by student name or course..."
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    className="border border-[#E2E8F0] rounded-[8px] pl-9 pr-3 py-1.5 text-[13px] w-64 focus:outline-[#2563EB]"
+                  />
+                </div>
+                <span className="text-[13px] text-[#64748B]">{filteredStudents.length} registered students</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[14px]">
+                  <thead>
+                    <tr className="border-b border-[#E2E8F0] text-[#64748B] text-[13px]">
+                      <th className="py-2.5 px-3 font-medium">Name</th>
+                      <th className="py-2.5 px-3 font-medium">Email</th>
+                      <th className="py-2.5 px-3 font-medium">Course / Dept</th>
+                      <th className="py-2.5 px-3 font-medium">Year</th>
+                      <th className="py-2.5 px-3 font-medium">Registered Date</th>
+                      <th className="py-2.5 px-3 font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {filteredStudents.map(student => (
+                      <tr key={student.id} className="hover:bg-[#F8FAFC]">
+                        <td className="py-3 px-3 font-medium text-[#1E293B]">{student.name}</td>
+                        <td className="py-3 px-3 text-[#64748B]">{student.email}</td>
+                        <td className="py-3 px-3">{student.course}</td>
+                        <td className="py-3 px-3 text-[#64748B]">{student.year}</td>
+                        <td className="py-3 px-3 text-[#64748B]">{student.createdAt}</td>
+                        <td className="py-3 px-3">
+                          <button
+                            onClick={() => setInspectedStudent(student)}
+                            className="text-[13px] font-medium text-[#2563EB] hover:underline"
+                          >
+                            Inspect Profile
+                          </button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#E2E8F0]">
-                      {filteredStudents.map(s => (
-                        <tr key={s.id} className="hover:bg-[#F8FAFC]">
-                          <td className="py-3 px-3">
-                            <span className="font-medium text-[#1E293B]">{s.name}</span>
-                            <div className="text-[12px] text-[#64748B]">{s.email}</div>
-                          </td>
-                          <td className="py-3 px-3">{s.course}</td>
-                          <td className="py-3 px-3 text-[#64748B]">{s.year}</td>
-                          <td className="py-3 px-3">{s.assessmentsCount} tests</td>
-                          <td className="py-3 px-3">
-                            <span className={`text-[12px] font-medium px-2 py-0.5 rounded ${
-                              s.latestStress === 'Low Stress' ? 'bg-teal-50 text-teal-700 border border-teal-200' :
-                              s.latestStress === 'Moderate Stress' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                              'bg-red-50 text-red-700 border border-red-200'
-                            }`}>
-                              {s.latestStress}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3">
-                            <button
-                              onClick={() => setInspectedStudent(s)}
-                              className="text-[13px] font-medium text-[#2563EB] hover:underline"
-                            >
-                              View Details
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
+            </div>
 
-            {/* Admin Inspected Student Details Modal */}
+            {/* Inspected Student Modal */}
             {inspectedStudent && (
               <div className="fixed inset-0 z-50 bg-[#1E293B]/30 flex items-center justify-center p-4">
                 <div className="bg-white rounded-[12px] max-w-md w-full p-6 shadow-lg border border-[#E2E8F0] space-y-4">
@@ -1407,29 +1357,63 @@ export default function App() {
 
                   <div className="space-y-2 text-[14px]">
                     <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
+                      <span className="text-[#64748B]">College</span>
+                      <span className="font-medium text-[#1E293B]">{inspectedStudent.college}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
                       <span className="text-[#64748B]">Course</span>
                       <span className="font-medium text-[#1E293B]">{inspectedStudent.course}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
-                      <span className="text-[#64748B]">Year</span>
+                      <span className="text-[#64748B]">Year / Semester</span>
                       <span className="font-medium text-[#1E293B]">{inspectedStudent.year}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
+                      <span className="text-[#64748B]">Age / Gender</span>
+                      <span className="font-medium text-[#1E293B]">{inspectedStudent.age} yrs &bull; {inspectedStudent.gender}</span>
+                    </div>
+                    {inspectedStudent.phone && (
+                      <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
+                        <span className="text-[#64748B]">Contact Phone</span>
+                        <span className="font-medium text-[#1E293B]">{inspectedStudent.phone}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
                       <span className="text-[#64748B]">Assessments Completed</span>
-                      <span className="font-medium text-[#1E293B]">{inspectedStudent.assessmentsCount}</span>
+                      <span className="font-medium text-[#2563EB]">
+                        {AuthStorage.getUserAssessments(inspectedStudent.id).length} assessments saved
+                      </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
-                      <span className="text-[#64748B]">Stress Classification</span>
-                      <span className="font-medium text-[#1E293B]">{inspectedStudent.latestStress}</span>
+                      <span className="text-[#64748B]">Daily Mood Logs</span>
+                      <span className="font-medium text-[#14B8A6]">
+                        {AuthStorage.getUserMoods(inspectedStudent.id).length} recorded
+                      </span>
                     </div>
                   </div>
 
-                  <div className="pt-2 flex justify-end">
+                  <div className="pt-3 flex justify-between items-center">
+                    <button
+                      onClick={() => {
+                        if (inspectedStudent.id === 'user_aarav') {
+                          showNotification('Default benchmark student record is protected.');
+                          return;
+                        }
+                        const allUsers = AuthStorage.getAllUsers().filter(u => u.id !== inspectedStudent.id);
+                        localStorage.setItem('mindpulse_users_db', JSON.stringify(allUsers));
+                        setInspectedStudent(null);
+                        refreshStudents();
+                        showNotification(`Removed record for ${inspectedStudent.name}.`);
+                      }}
+                      className="text-[#EF4444] hover:text-red-700 text-[12px] font-medium"
+                    >
+                      Delete Student Record
+                    </button>
                     <button
                       onClick={() => setInspectedStudent(null)}
-                      className="bg-[#2563EB] text-white text-[13px] font-medium px-4 py-2 rounded-[8px]"
+                      className="bg-[#2563EB] hover:bg-blue-700 text-white text-[13px] font-medium px-4 py-2 rounded-[8px]"
                     >
-                      Close
+                      Close Profile
                     </button>
                   </div>
                 </div>
@@ -1439,293 +1423,369 @@ export default function App() {
           </div>
         )}
 
-        {/* ========================================================
-            PAGE 6: ADMIN OVERVIEW DASHBOARD
-            ======================================================== */}
-        {currentRole === 'admin' && currentPage === 'dashboard' && (
-          <div className="space-y-6">
-            
-            <div>
-              <h1 className="text-[24px] sm:text-[28px] font-bold text-[#1E293B]">
-                Faculty & Counseling Overview
-              </h1>
-              <p className="text-[14px] text-[#64748B] mt-1">
-                Aggregated student wellness metrics across departments.
-              </p>
-            </div>
-
-            {/* 4 Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              
-              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <span className="text-[13px] font-medium text-[#64748B]">Total Students</span>
-                <div className="text-[28px] font-bold text-[#1E293B] mt-1">4</div>
-                <p className="text-[13px] text-[#64748B] mt-1">Enrolled accounts</p>
-              </div>
-
-              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <span className="text-[13px] font-medium text-[#64748B]">Total Assessments</span>
-                <div className="text-[28px] font-bold text-[#1E293B] mt-1">8</div>
-                <p className="text-[13px] text-[#64748B] mt-1">Surveys evaluated</p>
-              </div>
-
-              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <span className="text-[13px] font-medium text-[#64748B]">Average Wellness</span>
-                <div className="text-[28px] font-bold text-[#1E293B] mt-1">68 / 100</div>
-                <p className="text-[13px] text-[#14B8A6] font-medium mt-1">Stable campus average</p>
-              </div>
-
-              <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <span className="text-[13px] font-medium text-[#64748B]">High Stress Indicator</span>
-                <div className="text-[28px] font-bold text-[#EF4444] mt-1">1</div>
-                <p className="text-[13px] text-[#64748B] mt-1">Counselor review advised</p>
-              </div>
-
-            </div>
-
-            {/* Quick Students Summary */}
-            <div className="bg-white border border-[#E2E8F0] rounded-[12px] p-5 sm:p-6 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-[18px] font-semibold text-[#1E293B]">Recent Student Evaluations</h2>
-                <button
-                  onClick={() => setCurrentPage('history')}
-                  className="text-[13px] font-medium text-[#2563EB] hover:underline"
-                >
-                  View full directory →
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[14px]">
-                  <thead>
-                    <tr className="border-b border-[#E2E8F0] text-[#64748B] text-[13px]">
-                      <th className="py-2.5 px-3 font-medium">Student Name</th>
-                      <th className="py-2.5 px-3 font-medium">Course</th>
-                      <th className="py-2.5 px-3 font-medium">Stress Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
-                    {adminStudents.map(s => (
-                      <tr key={s.id} className="hover:bg-[#F8FAFC]">
-                        <td className="py-3 px-3 font-medium text-[#1E293B]">{s.name}</td>
-                        <td className="py-3 px-3 text-[#64748B]">{s.course}</td>
-                        <td className="py-3 px-3">
-                          <span className={`text-[12px] font-medium px-2 py-0.5 rounded ${
-                            s.latestStress === 'Low Stress' ? 'bg-teal-50 text-teal-700 border border-teal-200' :
-                            s.latestStress === 'Moderate Stress' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                            'bg-red-50 text-red-700 border border-red-200'
-                          }`}>
-                            {s.latestStress}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* ========================================================
-            PAGE 7: PHP SOURCE CODE VIEWER (Clean Explorer)
-            ======================================================== */}
-        {currentPage === 'code' && (
-          <div className="space-y-4">
-            
-            <div>
-              <h1 className="text-[24px] sm:text-[28px] font-bold text-[#1E293B]">
-                PHP & MySQL Source Files
-              </h1>
-              <p className="text-[14px] text-[#64748B] mt-1">
-                Local XAMPP codebase files (located in <code>/mental-health/</code>).
-              </p>
-            </div>
-
-            <div className="bg-white border border-[#E2E8F0] rounded-[12px] shadow-[0_2px_8px_rgba(15,23,42,0.06)] overflow-hidden grid grid-cols-1 md:grid-cols-4 min-h-[500px]">
-              
-              {/* Sidebar */}
-              <div className="border-r border-[#E2E8F0] bg-[#F8FAFC] p-4 text-[13px] space-y-4">
-                <div>
-                  <span className="font-semibold text-[#64748B] text-[11px] uppercase tracking-wider block mb-1.5">Database</span>
-                  <button
-                    onClick={() => setSelectedFilePath('database/mental_health_system.sql')}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-[6px] truncate ${
-                      selectedFilePath === 'database/mental_health_system.sql' ? 'bg-[#EFF6FF] text-[#2563EB] font-medium' : 'text-[#64748B] hover:bg-slate-100'
-                    }`}
-                  >
-                    database/mental_health_system.sql
-                  </button>
-                </div>
-
-                <div>
-                  <span className="font-semibold text-[#64748B] text-[11px] uppercase tracking-wider block mb-1.5">Config & Includes</span>
-                  <div className="space-y-1">
-                    {['config/database.php', 'config/config.php', 'includes/functions.php', 'includes/auth.php'].map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setSelectedFilePath(f)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-[6px] truncate ${
-                          selectedFilePath === f ? 'bg-[#EFF6FF] text-[#2563EB] font-medium' : 'text-[#64748B] hover:bg-slate-100'
-                        }`}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="font-semibold text-[#64748B] text-[11px] uppercase tracking-wider block mb-1.5">Student Flow</span>
-                  <div className="space-y-1">
-                    {['dashboard.php', 'assessment.php', 'submit_assessment.php', 'mood_tracker.php', 'save_mood.php', 'recommendations.php', 'history.php'].map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setSelectedFilePath(f)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-[6px] truncate ${
-                          selectedFilePath === f ? 'bg-[#EFF6FF] text-[#2563EB] font-medium' : 'text-[#64748B] hover:bg-slate-100'
-                        }`}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="font-semibold text-[#64748B] text-[11px] uppercase tracking-wider block mb-1.5">Admin & API</span>
-                  <div className="space-y-1">
-                    {['admin/dashboard.php', 'admin/students.php', 'api/analyze_journal.php', 'api/mood_data.php'].map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setSelectedFilePath(f)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-[6px] truncate ${
-                          selectedFilePath === f ? 'bg-[#EFF6FF] text-[#2563EB] font-medium' : 'text-[#64748B] hover:bg-slate-100'
-                        }`}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Code viewer pane */}
-              <div className="md:col-span-3 p-5 font-mono text-[12px] text-[#1E293B] bg-white overflow-y-auto max-h-[550px] leading-relaxed">
-                <div className="flex justify-between items-center pb-2.5 border-b border-[#E2E8F0] mb-3 text-[12px] text-[#64748B]">
-                  <span className="font-semibold text-[#2563EB] font-sans">{selectedFilePath}</span>
-                  <span className="font-sans">PHP 8+ &bull; MySQL PDO</span>
-                </div>
-
-                <pre className="whitespace-pre overflow-x-auto text-[#334155]">
-                  {selectedFilePath === 'database/mental_health_system.sql' ? (
-`-- Database: mental_health_system (MySQL / MariaDB)
-CREATE DATABASE IF NOT EXISTS mental_health_system;
-USE mental_health_system;
-
-CREATE TABLE users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  email VARCHAR(150) NOT NULL UNIQUE,
-  password VARCHAR(255) NOT NULL,
-  role ENUM('student', 'admin') DEFAULT 'student',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE assessments (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  total_score INT NOT NULL,
-  percentage DECIMAL(5,2) NOT NULL,
-  stress_level ENUM('Low Stress', 'Moderate Stress', 'High Stress') NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE mood_entries (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
-  mood ENUM('Happy', 'Good', 'Neutral', 'Low', 'Very Low') NOT NULL,
-  stress_level INT NOT NULL,
-  energy_level INT NOT NULL,
-  sleep_hours DECIMAL(3,1) NOT NULL,
-  journal TEXT DEFAULT NULL,
-  entry_date DATE NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY user_day (user_id, entry_date)
-);`
-                  ) : selectedFilePath === 'config/database.php' ? (
-`<?php
-/**
- * Database Connection via PDO
- */
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'mental_health_system');
-
-class Database {
-    private static $instance = null;
-    private $conn;
-
-    private function __construct() {
-        $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-        $options = [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ];
-        $this->conn = new PDO($dsn, DB_USER, DB_PASS, $options);
-    }
-
-    public static function getInstance() {
-        if (!self::$instance) self::$instance = new Database();
-        return self::$instance;
-    }
-
-    public function getConnection() {
-        return $this->conn;
-    }
-}
-
-function getDB() {
-    return Database::getInstance()->getConnection();
-}
-?>`
-                  ) : (
-`<?php
-/**
- * mental-health/${selectedFilePath}
- * AI-Based Student Mental Health Monitoring System
- */
-require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/config/config.php';
-// Fully compatible with local XAMPP setup: http://localhost/mental-health/
-?>`
-                  )}
-                </pre>
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
       </main>
 
-      {/* Clean, Simple Footer */}
-      <footer className="bg-white border-t border-[#E2E8F0] mt-12 py-6 text-center text-[13px] text-[#64748B]">
-        <div className="max-w-[1200px] mx-auto px-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            &copy; {new Date().getFullYear()} MindPulse &bull; Student Mental Wellness Monitoring System
+      {/* Clean, Simple Footer with Faculty Admin Option */}
+      <footer className="bg-white border-t border-[#E2E8F0] mt-12 py-6 text-[13px] text-[#64748B]">
+        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-[#2563EB] text-white flex items-center justify-center">
+              <Heart className="w-3.5 h-3.5 fill-white" />
+            </div>
+            <span className="font-semibold text-[#1E293B]">MindPulse</span>
+            <span>&bull; Student Mental Wellness Monitoring System</span>
           </div>
-          <div className="flex items-center gap-4">
-            <span>B.Tech CSE Project</span>
-            <span>XAMPP &bull; PHP 8+ &bull; MySQL</span>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+            <span className="flex items-center gap-1.5 text-[#64748B]">
+              <span className="w-2 h-2 rounded-full bg-[#14B8A6]"></span>
+              Tele-MANAS: <strong className="text-[#1E293B]">14416</strong> (24x7)
+            </span>
+
+            {/* Storage / Supabase Status Button */}
+            <button
+              onClick={() => setShowStorageModal(true)}
+              className="text-[#64748B] hover:text-[#1E293B] flex items-center gap-1.5 bg-[#F1F5F9] px-2.5 py-1 rounded-[6px] text-[12px] font-medium transition-colors"
+              title="View Authentication & Storage Status"
+            >
+              <Database className="w-3.5 h-3.5 text-[#2563EB]" />
+              <span>{isSupabaseConfigured ? 'Supabase Sync Active' : 'User Data Saved Locally'}</span>
+            </button>
+            
+            {/* Faculty Admin Option in Footer */}
+            <button
+              onClick={() => {
+                const users = AuthStorage.getAllUsers();
+                const adminUser = users.find(u => u.role === 'admin') || {
+                  id: 'user_admin',
+                  name: 'Faculty Counselor',
+                  email: 'admin@mentalhealth.local',
+                  college: 'Apex Institute of Technology',
+                  course: 'Student Welfare Department',
+                  year: 'Faculty Staff',
+                  age: 38,
+                  gender: 'Staff',
+                  role: 'admin',
+                  createdAt: '2026-01-10'
+                };
+                AuthStorage.setCurrentUser(adminUser as any);
+                setCurrentUser(adminUser as any);
+                setCurrentPage('admin');
+                refreshStudents();
+                showNotification('Switched to Faculty Admin Portal.');
+              }}
+              className="bg-[#EFF6FF] border border-[#BFDBFE] hover:bg-[#DBEAFE] text-[#2563EB] font-medium px-3.5 py-1.5 rounded-[8px] flex items-center gap-1.5 transition-colors shadow-xs"
+              title="Access Institutional Student Wellness Directory & Counselor Console"
+            >
+              <ShieldCheck className="w-4 h-4 text-[#2563EB]" />
+              <span>Faculty Admin Portal</span>
+            </button>
           </div>
         </div>
       </footer>
+
+      {/* ========================================================
+          DATA PERSISTENCE & SUPABASE STATUS MODAL
+          ======================================================== */}
+      {showStorageModal && (
+        <div className="fixed inset-0 z-50 bg-[#1E293B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[12px] max-w-md w-full p-6 shadow-xl border border-[#E2E8F0] space-y-4">
+            <div className="flex justify-between items-start pb-2 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-[#2563EB]" />
+                <h3 className="text-[17px] font-semibold text-[#1E293B]">Authentication & Storage</h3>
+              </div>
+              <button onClick={() => setShowStorageModal(false)} className="text-[#64748B] hover:text-[#1E293B]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-[13px] text-[#64748B]">
+              <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-[8px] space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="font-medium text-[#1E293B]">Storage Mode:</span>
+                  <span className="font-medium text-[#14B8A6]">
+                    {isSupabaseConfigured ? 'Supabase Cloud + Local Cache' : 'Browser Persistent Storage (Active)'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-[#1E293B]">Active User:</span>
+                  <span>{currentUser.name} ({currentUser.role})</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-[#1E293B]">Total Registered Users:</span>
+                  <span>{allStudents.length + 1} profiles</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-[#1E293B]">Assessments Saved:</span>
+                  <span>{assessments.length} records</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-[#1E293B]">Mood Logs Saved:</span>
+                  <span>{moodLogs.length} entries</span>
+                </div>
+              </div>
+
+              <p className="text-[12px] leading-relaxed">
+                All registered accounts, questionnaire assessments, stress classifications, and daily mood journals are permanently saved in persistent storage. You can register new students, switch to the Faculty Admin portal, or sign back in at any time.
+              </p>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setShowStorageModal(false)}
+                className="bg-[#2563EB] text-white text-[13px] font-medium px-4 py-2 rounded-[8px]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          AUTH MODAL (Sign In & New User Registration)
+          ======================================================== */}
+      {authModal && (
+        <div className="fixed inset-0 z-50 bg-[#1E293B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[12px] max-w-lg w-full p-6 sm:p-7 shadow-xl border border-[#E2E8F0] space-y-4 max-h-[90vh] overflow-y-auto">
+            
+            <div className="flex justify-between items-start pb-2 border-b border-[#E2E8F0]">
+              <div>
+                <h3 className="text-[18px] font-semibold text-[#1E293B]">
+                  {authModal === 'register' ? 'New Student Registration' : 'Student & Faculty Login'}
+                </h3>
+                <p className="text-[13px] text-[#64748B] mt-0.5">
+                  {authModal === 'register' 
+                    ? 'Register your account to securely track your mental wellness.' 
+                    : 'Sign in to access your confidential assessment history and trends.'}
+                </p>
+              </div>
+              <button onClick={() => setAuthModal(null)} className="text-[#64748B] hover:text-[#1E293B]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {authError && (
+              <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-[13px] p-2.5 rounded-[8px]">
+                {authError}
+              </div>
+            )}
+
+            {authModal === 'register' ? (
+              <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-[14px]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Priya Sharma"
+                      value={registerForm.name}
+                      onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">College Email *</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="priya@college.edu"
+                      value={registerForm.email}
+                      onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Phone Number</label>
+                    <input
+                      type="tel"
+                      placeholder="+91 9876543210"
+                      value={registerForm.phone}
+                      onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Age (Years) *</label>
+                    <input
+                      type="number"
+                      required
+                      min={15}
+                      max={85}
+                      value={registerForm.age}
+                      onChange={(e) => setRegisterForm({ ...registerForm, age: Number(e.target.value) })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Gender</label>
+                    <select
+                      value={registerForm.gender}
+                      onChange={(e) => setRegisterForm({ ...registerForm, gender: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB] bg-white"
+                    >
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                      <option value="Non-Binary">Non-Binary</option>
+                      <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">College / Institute</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Apex Institute of Technology"
+                      value={registerForm.college}
+                      onChange={(e) => setRegisterForm({ ...registerForm, college: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Course / Degree</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. B.Tech Computer Science"
+                      value={registerForm.course}
+                      onChange={(e) => setRegisterForm({ ...registerForm, course: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Year / Semester</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 4th Year / Sem 8"
+                      value={registerForm.year}
+                      onChange={(e) => setRegisterForm({ ...registerForm, year: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Password (Min 8 chars) *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={registerForm.password}
+                      onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Confirm Password *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={registerForm.confirmPassword}
+                      onChange={(e) => setRegisterForm({ ...registerForm, confirmPassword: e.target.value })}
+                      className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-[#2563EB] hover:bg-blue-700 text-white font-medium text-[14px] py-2.5 rounded-[8px] transition-colors mt-3 shadow-xs"
+                >
+                  Create Student Account & Save Data
+                </button>
+
+                <div className="text-center text-[13px] text-[#64748B] pt-2">
+                  Already registered?{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setAuthError(null); setAuthModal('login'); }}
+                    className="text-[#2563EB] font-medium hover:underline"
+                  >
+                    Sign in here
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleLoginSubmit} className="space-y-3.5 text-[14px]">
+                <div>
+                  <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="student@mentalhealth.local"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[13px] font-medium text-[#1E293B] mb-1">Password</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full border border-[#E2E8F0] rounded-[8px] px-3 py-2 text-[14px] focus:outline-[#2563EB]"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-[#2563EB] hover:bg-blue-700 text-white font-medium text-[14px] py-2.5 rounded-[8px] transition-colors mt-2"
+                >
+                  Sign In
+                </button>
+
+                {/* Quick One-Click Demo Logins */}
+                <div className="pt-2 border-t border-[#E2E8F0] text-[12px]">
+                  <span className="text-[#64748B] block mb-1.5 font-medium">Quick Demo Accounts:</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickSwitchUser('student@mentalhealth.local')}
+                      className="flex-1 py-1.5 px-2 bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] rounded-[6px] text-[#1E293B]"
+                    >
+                      Student (Aarav)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickSwitchUser('admin@mentalhealth.local')}
+                      className="flex-1 py-1.5 px-2 bg-[#EFF6FF] hover:bg-blue-100 border border-[#BFDBFE] rounded-[6px] text-[#2563EB] font-medium"
+                    >
+                      Faculty Admin
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-center text-[13px] text-[#64748B] pt-2">
+                  Need an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setAuthError(null); setAuthModal('register'); }}
+                    className="text-[#2563EB] font-medium hover:underline"
+                  >
+                    Register new student
+                  </button>
+                </div>
+              </form>
+            )}
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

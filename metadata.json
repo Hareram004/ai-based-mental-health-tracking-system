@@ -1,6 +1,6 @@
 {
   "name": "AI-Based Student Mental Health Monitoring System",
-  "description": "Final-Year B.Tech CSE Project: AI-Based Student Mental Health Monitoring System with PHP 8+, MySQL, XAMPP, Vanilla JS, Chart.js, and interactive live preview.",
+  "description": "AI-Based Student Mental Health Monitoring System – MindPulse: A modern, confidential wellness monitoring platform for students with structured assessments, daily mood tracking, trend analysis, and faculty admin support.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
